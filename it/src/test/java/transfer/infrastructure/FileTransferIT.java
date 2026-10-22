@@ -6,6 +6,8 @@ import transfer.application.TransferService;
 import transfer.domain.Transfer;
 import transfer.domain.TransferException;
 import transfer.domain.TransferResult;
+import transfer.sample.Customer;
+import transfer.sample.Customers;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,48 +24,52 @@ class FileTransferIT {
     private final TransferService service = new TransferService();
 
     @Test
-    void memoryToFile() throws TransferException, IOException {
-        InMemoryConnector<String> source = new InMemoryConnector<>("memory", List.of("ada", "grace"));
-        Path output = tempDir.resolve("out.txt");
+    void writesAdaGraceAndLinusToAFile() throws TransferException, IOException {
+        InMemoryConnector<String> inbox = new InMemoryConnector<>("inbox", Customers.lines());
+        Path notebook = tempDir.resolve("customers.txt");
 
-        TransferResult result = service.execute(new Transfer<>(source, new FileLineConnector("file", output)));
-
-        assertThat(result.elementCount()).isEqualTo(2);
-        assertThat(Files.readAllLines(output)).containsExactly("ada", "grace");
-    }
-
-    @Test
-    void fileToMemory() throws IOException, TransferException {
-        Path input = tempDir.resolve("in.txt");
-        Files.write(input, List.of("ada", "grace"));
-        InMemoryConnector<String> target = new InMemoryConnector<>("memory", List.of());
-
-        TransferResult result = service.execute(new Transfer<>(new FileLineConnector("file", input), target));
-
-        assertThat(result.elementCount()).isEqualTo(2);
-        assertThat(target.contents()).containsExactly("ada", "grace");
-    }
-
-    @Test
-    void fileToFile() throws IOException, TransferException {
-        Path input = tempDir.resolve("in.txt");
-        Path output = tempDir.resolve("out.txt");
-        Files.write(input, List.of("a", "b", "c"));
-
-        TransferResult result = service.execute(new Transfer<>(
-                new FileLineConnector("in", input),
-                new FileLineConnector("out", output)));
+        TransferResult result = service.execute(new Transfer<>(inbox, new FileLineConnector("notebook", notebook)));
 
         assertThat(result.elementCount()).isEqualTo(3);
-        assertThat(Files.readAllLines(output)).containsExactly("a", "b", "c");
+        assertThat(Files.readAllLines(notebook)).containsExactly(
+                "C-001, Ada Lovelace, London",
+                "C-002, Grace Hopper, New York",
+                "C-003, Linus Torvalds, Helsinki");
     }
 
     @Test
-    void directoryTargetFailsWithNothingWritten() {
-        InMemoryConnector<String> source = new InMemoryConnector<>("memory", List.of("ada", "grace"));
-        FileLineConnector target = new FileLineConnector("directory", tempDir);
+    void readsAdaGraceAndLinusBackFromAFile() throws IOException, TransferException {
+        Path notebook = tempDir.resolve("customers.txt");
+        Files.write(notebook, Customers.lines());
+        InMemoryConnector<String> outbox = new InMemoryConnector<>("outbox", List.of());
 
-        Throwable thrown = catchThrowable(() -> service.execute(new Transfer<>(source, target)));
+        TransferResult result = service.execute(new Transfer<>(new FileLineConnector("notebook", notebook), outbox));
+        List<Customer> people = outbox.contents().stream().map(Customer::fromLine).toList();
+
+        assertThat(result.elementCount()).isEqualTo(3);
+        assertThat(people).containsExactly(Customers.ADA, Customers.GRACE, Customers.LINUS);
+    }
+
+    @Test
+    void copiesTheNotebookFromOneFileToAnother() throws IOException, TransferException {
+        Path original = tempDir.resolve("original.txt");
+        Path copy = tempDir.resolve("copy.txt");
+        Files.write(original, Customers.lines());
+
+        TransferResult result = service.execute(new Transfer<>(
+                new FileLineConnector("original", original),
+                new FileLineConnector("copy", copy)));
+
+        assertThat(result.elementCount()).isEqualTo(3);
+        assertThat(Files.readAllLines(copy)).containsExactlyElementsOf(Customers.lines());
+    }
+
+    @Test
+    void refusesToWriteTheNotebookIntoADirectory() {
+        InMemoryConnector<String> inbox = new InMemoryConnector<>("inbox", Customers.lines());
+        FileLineConnector notebook = new FileLineConnector("notebook", tempDir);
+
+        Throwable thrown = catchThrowable(() -> service.execute(new Transfer<>(inbox, notebook)));
 
         assertThat(thrown).isInstanceOf(TransferException.class);
         TransferException failure = (TransferException) thrown;

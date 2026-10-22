@@ -5,6 +5,8 @@ import transfer.domain.Transfer;
 import transfer.domain.TransferException;
 import transfer.domain.TransferResult;
 import transfer.infrastructure.InMemoryConnector;
+import transfer.sample.Customer;
+import transfer.sample.Customers;
 import transfer.testing.FailingSource;
 import transfer.testing.FailingTarget;
 
@@ -17,58 +19,59 @@ class TransferServiceTest {
     private final TransferService service = new TransferService();
 
     @Test
-    void copiesEveryElement() throws TransferException {
-        InMemoryConnector<String> source = new InMemoryConnector<>("source", List.of("a", "b", "c"));
-        InMemoryConnector<String> target = new InMemoryConnector<>("target", List.of());
+    void copiesAdaGraceAndLinus() throws TransferException {
+        InMemoryConnector<Customer> inbox = new InMemoryConnector<>("inbox", Customers.ALL);
+        InMemoryConnector<Customer> outbox = new InMemoryConnector<>("outbox", List.of());
 
-        TransferResult result = service.execute(new Transfer<>(source, target));
+        TransferResult result = service.execute(new Transfer<>(inbox, outbox));
 
         assertThat(result.elementCount()).isEqualTo(3);
-        assertThat(source.contents()).containsExactly("a", "b", "c");
-        assertThat(target.contents()).containsExactly("a", "b", "c");
+        assertThat(inbox.contents()).containsExactlyElementsOf(Customers.ALL);
+        assertThat(outbox.contents()).containsExactly(Customers.ADA, Customers.GRACE, Customers.LINUS);
     }
 
     @Test
-    void emptySourceWritesNothing() throws TransferException {
-        InMemoryConnector<String> source = new InMemoryConnector<>("source", List.of());
-        InMemoryConnector<String> target = new InMemoryConnector<>("target", List.of("kept"));
+    void emptyInboxLeavesTheOutboxUntouched() throws TransferException {
+        InMemoryConnector<Customer> inbox = new InMemoryConnector<>("inbox", List.of());
+        InMemoryConnector<Customer> outbox = new InMemoryConnector<>("outbox", List.of(Customers.ADA));
 
-        TransferResult result = service.execute(new Transfer<>(source, target));
+        TransferResult result = service.execute(new Transfer<>(inbox, outbox));
 
         assertThat(result.elementCount()).isZero();
-        assertThat(target.contents()).containsExactly("kept");
+        assertThat(outbox.contents()).containsExactly(Customers.ADA);
     }
 
     @Test
-    void targetFailureKeepsSuccessfulWrites() {
-        InMemoryConnector<String> source = new InMemoryConnector<>("source", List.of("a", "b", "c"));
-        FailingTarget<String> target = new FailingTarget<>("target", 1);
+    void stopsAfterAdaWhenTheOutboxFails() {
+        InMemoryConnector<Customer> inbox = new InMemoryConnector<>("inbox", Customers.ALL);
+        FailingTarget<Customer> outbox = new FailingTarget<>("outbox", 1);
 
-        Throwable thrown = catchThrowable(() -> service.execute(new Transfer<>(source, target)));
+        Throwable thrown = catchThrowable(() -> service.execute(new Transfer<>(inbox, outbox)));
 
         assertThat(thrown).isInstanceOf(TransferException.class);
         TransferException failure = (TransferException) thrown;
         assertThat(failure.elementsWritten()).isEqualTo(1);
-        assertThat(failure).hasMessageContaining("source");
-        assertThat(failure).hasMessageContaining("target");
-        assertThat(failure).hasMessageContaining("1");
+        assertThat(failure).hasMessageContaining("inbox");
+        assertThat(failure).hasMessageContaining("outbox");
         assertThat(failure).hasCauseInstanceOf(IllegalStateException.class);
-        assertThat(target.written()).containsExactly("a");
-        assertThat(target.sinkClosed()).isTrue();
+        assertThat(outbox.written()).containsExactly(Customers.ADA);
+        assertThat(outbox.written()).doesNotContain(Customers.GRACE, Customers.LINUS);
+        assertThat(outbox.sinkClosed()).isTrue();
     }
 
     @Test
-    void sourceFailureKeepsSuccessfulWrites() {
-        FailingSource<String> source = new FailingSource<>("source", List.of("a", "b", "c"), 1);
-        FailingTarget<String> target = new FailingTarget<>("target", -1);
+    void stopsAfterAdaWhenTheInboxFails() {
+        FailingSource<Customer> inbox = new FailingSource<>("inbox", Customers.ALL, 1);
+        FailingTarget<Customer> outbox = new FailingTarget<>("outbox", -1);
 
-        Throwable thrown = catchThrowable(() -> service.execute(new Transfer<>(source, target)));
+        Throwable thrown = catchThrowable(() -> service.execute(new Transfer<>(inbox, outbox)));
 
         assertThat(thrown).isInstanceOf(TransferException.class);
         TransferException failure = (TransferException) thrown;
         assertThat(failure.elementsWritten()).isEqualTo(1);
         assertThat(failure).hasCauseInstanceOf(IllegalStateException.class);
-        assertThat(target.written()).containsExactly("a");
-        assertThat(target.sinkClosed()).isTrue();
+        assertThat(outbox.written()).containsExactly(Customers.ADA);
+        assertThat(outbox.written()).doesNotContain(Customers.GRACE, Customers.LINUS);
+        assertThat(outbox.sinkClosed()).isTrue();
     }
 }

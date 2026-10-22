@@ -1,6 +1,6 @@
 # data-transfer
 
-Generic data stores with source and target connectors. A transfer plugs one source store into one target store. `TransferService` copies every element and returns the count, or fails with the number of elements already written.
+A transfer copies what is in a source store and leaves it in a target store. When it finishes, it says how many elements moved. If it stops early, it says how many were already written and leaves those writes in place.
 
 ## Run
 
@@ -10,10 +10,33 @@ sbt test
 sbt "it/test"
 ```
 
-`sbt run` copies a small in-memory sample, then writes the same elements to a temporary file, and prints each element count.
+`sbt run` copies three customers from an inbox to an outbox, writes them into a temporary file, then reads that file back:
 
-## Layout
+```
+Copied 3 customers: Ada Lovelace, Grace Hopper, Linus Torvalds.
+Wrote 3 customers to <temporary path>
+Ada Lovelace (C-001) from London
+Grace Hopper (C-002) from New York
+Linus Torvalds (C-003) from Helsinki
+```
 
-- `transfer.domain` — store roles, a transfer, and failure
-- `transfer.application` — `TransferService`
-- `transfer.infrastructure` — in-memory and file-line connectors
+`sbt test` checks the copy in memory. `sbt "it/test"` checks the same copy through real files.
+
+## The three customers
+
+- C-001, Ada Lovelace, London
+- C-002, Grace Hopper, New York
+- C-003, Linus Torvalds, Helsinki
+
+A line in the file looks like `C-001, Ada Lovelace, London`.
+
+## Where things live
+
+- `transfer.domain` holds a source, a target, a transfer, and what a failure looks like.
+- `transfer.application` holds `TransferService`, which does the copy.
+- `transfer.infrastructure` holds the in-memory store and the text-file store.
+- `transfer.sample` holds Ada, Grace, and Linus.
+
+## Another connector
+
+A new store is a class that implements `Source`, `Target`, or both. That is where a database would plug in. This project does not start MongoDB or Redis.
